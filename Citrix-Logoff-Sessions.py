@@ -15,7 +15,7 @@ site_id = 'a0ed6544-3944-4c36-8f18-75a5e3ba17b2'
 
 
 # Regex patterns
-server_type_pattern = r'"server-type"\s*:\s*"DimriCitrixServers"'
+server_type_pattern = r'"server-type"\s*:\s*"CitrixServers"'
 parent_user_pattern = r'"parentUser":"(.*?)"'
 
 # Function to get bearer token
@@ -96,13 +96,13 @@ try:
     with open(file_path, 'r') as file:
         json_data = file.read()
 
-    # Check if server-type is DimriCitrixServers
+    # Check if server-type is CitrixServers
     server_type_match = re.search(server_type_pattern, json_data)
 
     if server_type_match:
-        # Extract all DIMRI parent users
+        # Extract all parent users
         parent_users = re.findall(parent_user_pattern, json_data)
-        clean_parent_users = [user.replace('DIMRI\\', '') for user in parent_users if user.startswith('DIMRI\\')]
+        clean_parent_users = [user.replace('domain\\', '') for user in parent_users if user.startswith('domain\\')]
 
         # Obtain bearer token
         bearer_token = get_bearer_token()
@@ -123,7 +123,7 @@ try:
         else:
             print("No valid parent users found or failed to obtain token")
     else:
-        print("Server type is not DimriCitrixServers")
+        print("Server type is not CitrixServers")
 
 except FileNotFoundError:
     print(f"File not found: {file_path}")
