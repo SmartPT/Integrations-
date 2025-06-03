@@ -3,11 +3,9 @@ from netmiko import ConnectHandler
 
 # --- CONFIGURATION ---
 SWITCH_IPS = [
-    "192.168.1.18",
-    "192.168.1.19",
 ]
-USERNAME = "Sadmin"
-PASSWORD = "123X"
+USERNAME = ""
+PASSWORD = ""
 SSH_PORT = 22
 ENABLE_PASSWORD = ""  # Fill this in if different from PASSWORD
 
