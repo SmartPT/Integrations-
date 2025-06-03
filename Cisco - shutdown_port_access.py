@@ -134,8 +134,8 @@ def main():
         print("[!] Log file not found.")
         sys.exit(1)
 
-    if not re.search(r'"server-type"\s*:\s*"DimriEndpoints"', log_data):
-        print("[!] Server type is not DimriEndpoints. Exiting.")
+    if not re.search(r'"server-type"\s*:\s*"Endpoints"', log_data):
+        print("[!] Server type is not Endpoints. Exiting.")
         sys.exit(0)
 
     parent_user_match = re.search(r'"agent"\s*:\s*\{.*?"ip"\s*:\s*"([^"]+)"', log_data, re.DOTALL)
