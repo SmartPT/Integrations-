@@ -1,88 +1,200 @@
+import re
+import subprocess
 import sys
 import json
-import os
-import requests
-from datetime import datetime, timedelta
+from datetime import datetime
+from netmiko import ConnectHandler
 
-LOG_FILE = "/var/ossec/logs/active-responses.log"
-OUTPUT_FILE = "/var/ossec/logs/extracted_data.json"
-THROTTLE_FILE = "/var/ossec/logs/switchthrottle_tracker.json"
-API_ENDPOINT = "https://xx.smartpt.co.il/alerts"
-THROTTLE_INTERVAL = timedelta(minutes=1)
-SHA256_KEY = ""
+# --- CONFIGURATION ---
+SWITCH_IPS = [
+    # לדוגמה: "192.168.1.1"
 
-def log_message(message):
-    with open(LOG_FILE, "a") as log_file:
-        log_file.write(f"[{datetime.now()}] {message}\n")
+]
 
-def save_throttle_data(throttle_data):
-    with open(THROTTLE_FILE, "w") as json_file:
-        json.dump(throttle_data, json_file)
+USERNAME = ""
+PASSWORD = ""
+SSH_PORT = 22
+ENABLE_PASSWORD = ""
 
-def load_throttle_data():
-    if os.path.exists(THROTTLE_FILE):
+def debug(msg):
+    print(f"[DEBUG] {msg}", file=sys.stderr)
+
+def format_mac_for_cisco(mac):
+    mac = mac.lower().replace(":", "").replace("-", "").replace(".", "")
+    if len(mac) != 12:
+        raise ValueError("Invalid MAC address length")
+    return f"{mac[:4]}.{mac[4:8]}.{mac[8:]}"
+
+
+def get_ports_from_mac(mac, mac_table_output):
+    ports = []
+    for line in mac_table_output.splitlines():
+        if mac.lower() in line.lower():
+            parts = line.split()
+            if len(parts) >= 4:
+                ports.append(parts[-1])
+    return ports
+
+
+def get_port_type(ssh, interface):
+    cmd = f"show interface {interface} switchport"
+    output = ssh.send_command(cmd)
+    for line in output.splitlines():
+        line = line.strip().lower()
+        if "operational mode:" in line:
+            return line.split("operational mode:")[1].strip()
+    return None
+
+
+def shutdown_port(ssh, interface):
+    debug(f"Shutting down interface {interface}...")
+    ssh.enable()
+    cmds = [f"interface {interface}", "shutdown", "exit"]
+    ssh.send_config_set(cmds)
+
+
+def find_access_port_for_mac(mac):
+    visited_switches = set()
+    for switch_ip in SWITCH_IPS:
+        debug(f"Checking switch: {switch_ip}")
+        if switch_ip in visited_switches:
+            continue
+        visited_switches.add(switch_ip)
+
+        device = {
+            "device_type": "cisco_ios",
+            "host": switch_ip,
+            "port": SSH_PORT,
+            "username": USERNAME,
+            "password": PASSWORD,
+            "secret": ENABLE_PASSWORD or PASSWORD,
+        }
+
         try:
-            with open(THROTTLE_FILE, "r") as file:
-                return json.load(file)
-        except json.JSONDecodeError:
-            log_message(f"Error: Malformed JSON in {THROTTLE_FILE}")
-            return {}
-    return {}
+            ssh = ConnectHandler(**device)
+            debug("Connected successfully.")
+            mac_table_output = ssh.send_command("show mac address-table")
+            formatted_mac = format_mac_for_cisco(mac)
+            debug(f"Formatted MAC: {formatted_mac}")
+            ports = get_ports_from_mac(formatted_mac, mac_table_output)
 
-def should_send_alert(host, rule_id):
-    if host == "N/A" or rule_id == "N/A":
-        log_message(f"Invalid host ({host}) or rule_id ({rule_id}), skipping alert.")
-        return False
+            if not ports:
+                debug(f"MAC {formatted_mac} not found on {switch_ip}")
+                ssh.disconnect()
+                continue
 
-    throttle_data = load_throttle_data()
-    current_time = datetime.now()
-    key = f"{host}_{rule_id}"
+            for port in ports:
+                port_type = get_port_type(ssh, port)
+                debug(f"Found MAC on port {port}, type: {port_type}")
+                if port_type and "access" in port_type:
+                    shutdown_port(ssh, port)
+                    ssh.disconnect()
+                    return switch_ip, port
 
-    if key in throttle_data:
-        last_sent_time = datetime.strptime(throttle_data[key], "%Y-%m-%d %H:%M:%S")
-        if current_time - last_sent_time < THROTTLE_INTERVAL:
-            log_message(f"Alert throttled for {key}. Last sent at {last_sent_time}.")
-            return False
+            ssh.disconnect()
 
-    throttle_data[key] = current_time.strftime("%Y-%m-%d %H:%M:%S")
-    save_throttle_data(throttle_data)
-    return True
+        except Exception as e:
+            debug(f"Connection error with {switch_ip}: {e}")
 
-def post_to_api(data):
-    data['sha256'] = SHA256_KEY
-    filtered_data = {k: v for k, v in data.items() if v not in [None, "", "N/A"]}
+    return None, None
 
+
+def get_mac_from_arping(ip):
     try:
-        headers = {'Content-Type': 'application/json'}
-        response = requests.post(API_ENDPOINT, headers=headers, json=filtered_data)
-
-        log_message(f"POST to {API_ENDPOINT} with data: {json.dumps(filtered_data, indent=2)}")
-        log_message(f"Response Status Code: {response.status_code}")
-        log_message(f"Response Body: {response.text}")
-
-        if response.status_code != 200:
-            log_message(f"Failed to post data to {API_ENDPOINT}: {response.status_code}")
+        debug(f"Running arping for IP: {ip}")
+        result = subprocess.run(["arping", "-I", "ens192", "-c", "3", ip], capture_output=True, text=True)
+        output = result.stdout
+        debug(f"Arping output:\n{output}")
+        mac_match = re.search(r"from\s+([0-9a-f:]{2}(?::[0-9a-f:]{2}){5})", output, re.IGNORECASE)
+        if mac_match:
+            mac = mac_match.group(1).lower()
+            debug(f"Extracted MAC: {mac}")
+            return mac
         else:
-            log_message("Data successfully posted")
+            debug("MAC not found in arping output.")
     except Exception as e:
-        log_message(f"Error posting data to API: {e}")
+        debug(f"Arping failed: {e}")
+    return None
 
-if __name__ == "__main__":
-    log_message("Starting smartpt_forwarder from stdin")
 
+def main():
+    debug("Started takedown script.")
     try:
-        input_data = json.load(sys.stdin)
-    except Exception as e:
-        log_message(f"Error reading input JSON: {e}")
+        with open('/var/ossec/logs/takedown-alerts.json', 'r') as f:
+            log_data = f.read()
+        debug("Loaded takedown-alerts.json")
+    except FileNotFoundError:
+        debug("File not found.")
         sys.exit(1)
 
-    input_data.setdefault("agent_name", "N/A")
-    input_data.setdefault("rule_id", "N/A")
+    if '"Endpoints"' not in log_data:
+        debug("Server-type not Endpoints. Exiting.")
+        sys.exit(0)
 
-    if should_send_alert(input_data['agent_name'], input_data['rule_id']):
-        with open(OUTPUT_FILE, "w") as output_file:
-            json.dump(input_data, output_file)
-        log_message(f"Input data saved to {OUTPUT_FILE}")
-        post_to_api(input_data)
+    ip_match = re.search(r'"ip"\s*:\s*"([^"]+)"', log_data)
+    name_match = re.search(r'"name"\s*:\s*"([^"]+)"', log_data)
+    id_match = re.search(r'"agent"\s*:\s*\{[^}]*"id"\s*:\s*"([^"]+)"', log_data)
+    rule_id_match = re.search(r'"rule"\s*:\s*\{[^}]*"id"\s*:\s*"([^"]+)"', log_data)
+
+    agent_ip = ip_match.group(1) if ip_match else "N/A"
+    agent_name = name_match.group(1) if name_match else "N/A"
+    agent_id = id_match.group(1) if id_match else "N/A"
+    rule_id = rule_id_match.group(1) if rule_id_match else "shutdown_port"
+
+    debug(f"agent_ip={agent_ip}, agent_name={agent_name}, agent_id={agent_id}, rule_id={rule_id}")
+
+    if agent_ip == "N/A":
+        debug("Agent IP missing. Exiting.")
+        sys.exit(1)
+
+    mac = get_mac_from_arping(agent_ip)
+    if not mac:
+        debug("Failed to get MAC. Exiting.")
+        sys.exit(1)
+
+    try:
+        formatted_mac = format_mac_for_cisco(mac)
+        debug(f"Cisco-formatted MAC: {formatted_mac}")
+    except ValueError as ve:
+        debug(f"MAC formatting failed: {ve}")
+        sys.exit(1)
+
+    switch, port = find_access_port_for_mac(mac)
+
+    if switch and port:
+        description = f"Port {port} on switch {switch} was shut down due to alert from agent {agent_ip}"
+        status = "shutdown_success"
     else:
-        log_message(f"Alert not sent due to throttle for {input_data['agent_name']} and rule {input_data['rule_id']}")
+        description = f"No access port found for MAC {formatted_mac} (agent {agent_ip})"
+        status = "shutdown_failed"
+        switch = "unknown"
+        port = "not_found"
+
+    message = (
+        f"Rule ID: {rule_id} "
+        f"*Agent Name*: {agent_name} (IP: {agent_ip}) "
+        f"*Description*: {description}; "
+        "Please review the activity related to this event."
+    )
+
+    output_data = {
+        "agent_id": agent_id,
+        "agent_name": agent_name,
+        "agent_ip": agent_ip,
+        "rule_id": rule_id,
+        "description": description,
+        "mac": formatted_mac,
+        "ip": agent_ip,
+        "port": port,
+        "switch": switch,
+        "status": status,
+        "message": message,
+        "timestamp": datetime.utcnow().isoformat() + "Z",  # הוספת timestamp בפורמט UTC ISO
+    }
+
+    print(json.dumps(output_data))
+    debug("✅ JSON output sent to stdout")
+
+
+if __name__ == "__main__":
+    main()
