@@ -1,204 +1,167 @@
-# SmartPT Integrations
+# ⚙️ SmartPT Integrations
 
-A curated collection of Python and Shell scripts designed to streamline IT security and network operations across Cisco, Citrix, and Cortex XDR environments.
+A curated collection of Python and Shell scripts designed to streamline IT security and network operations across **Cisco**, **Citrix**, **Cortex XDR**, and **Wazuh** environments.
 
 ---
 
-## 📂 Repository Structure
+## 📁 Repository Structure
 
-- **Cisco/** — Scripts for managing network ports and interfaces.
-- **Citrix/** — Tools for Citrix session management and site identification.
-- **Cortex/** — Security automation scripts utilizing Cortex XDR.
+- **Cisco/** – Network automation scripts (port control, MAC tracing).
+- **Citrix/** – Session and site management utilities.
+- **Cortex/** – API-based endpoint isolation.
+- **Wazuh-XDR/** – Wazuh Active Response integrations for automated port blocking/unblocking.
 
 ---
 
 ## 🟦 Cisco Scripts
 
 ### 1. `get_port_from_mac.py`
-- **Purpose**: Identifies the physical switch port connected to a specified MAC address on a Cisco switch.
-- **Prerequisites**:
+- **Purpose**: Identifies the switch port a MAC address is connected to.
+- **Requirements**:
   - Python 3.7+
-  - `paramiko` library for SSH connections
-  - Network access to the Cisco switch
+  - `paramiko`
+  - SSH access to Cisco switch
 - **Usage**:
   ```bash
   python get_port_from_mac.py --mac 00:11:22:33:44:55
+  ```
 
-Functionality: Connects to the Cisco switch via SSH, executes commands to search for the MAC address in the MAC address table, and returns the associated interface. 
+### 2. `shutdown_port_access.py`
+- **Purpose**: Shuts down a specific switch interface (to isolate a device).
+- **Usage**:
+  ```bash
+  python shutdown_port_access.py --interface GigabitEthernet0/1
+  ```
 
+### 3. `up_port_access.py`
+- **Purpose**: Brings a previously shut-down port back online.
+- **Usage**:
+  ```bash
+  python up_port_access.py --interface GigabitEthernet0/1
+  ```
 
-2. shutdown_port_access.py
-
-Purpose: Disables (shuts down) a specific port on a Cisco switch, typically to isolate unauthorized or compromised devices.
-
-Prerequisites:
-
-Same as above
-
-
-Usage:
-
-python shutdown_port_access.py --interface GigabitEthernet0/1
-
-Functionality: Connects to the switch and issues the shutdown command on the specified interface. 
-
-
-3. up_port_access.py
-
-Purpose: Re-enables a previously shut down port on a Cisco switch.
-
-Prerequisites:
-
-Same as above
-
-
-Usage:
-
-python up_port_access.py --interface GigabitEthernet0/1
-
-Functionality: Connects to the switch and issues the no shutdown command on the specified interface. 
-
-
-4. shutdown_port_access-simulation.py
-
-Purpose: Simulates the shutdown of a port without executing the actual command, useful for testing and validation.
-
-Prerequisites:
-
-Same as above
-
-
-Usage:
-
-python shutdown_port_access-simulation.py --interface GigabitEthernet0/1
-
-Functionality: Performs all steps of the shutdown process except the execution of the shutdown command, allowing administrators to verify the process without impacting the network. 
-
-
+### 4. `shutdown_port_access-simulation.py`
+- **Purpose**: Simulates port shutdown (no actual changes applied).
+- **Usage**:
+  ```bash
+  python shutdown_port_access-simulation.py --interface GigabitEthernet0/1
+  ```
 
 ---
 
-🟨 Citrix Scripts
+## 🟨 Citrix Scripts
 
-5. GetSiteID.sh
+### 5. `GetSiteID.sh`
+- **Purpose**: Retrieves Citrix Site ID from the environment.
+- **Usage**:
+  ```bash
+  bash GetSiteID.sh
+  ```
 
-Purpose: Retrieves the Site ID of the Citrix deployment.
+### 6. `Logoff-Sessions.py`
+- **Purpose**: Logs off a user from their active Citrix session.
+- **Usage**:
+  ```bash
+  python Logoff-Sessions.py --user username
+  ```
 
-Prerequisites:
-
-Access to Citrix environment
-
-Execution permissions for shell scripts
-
-
-Usage:
-
-bash GetSiteID.sh
-
-Functionality: Executes commands to query the Citrix configuration and extracts the Site ID. 
-
-
-6. Logoff-Sessions.py
-
-Purpose: Logs off active user sessions in a Citrix environment.
-
-Prerequisites:
-
-Python 3.7+
-
-Citrix SDK or API access
-
-
-Usage:
-
-python Logoff-Sessions.py --user username
-
-Functionality: Connects to the Citrix environment and issues commands to log off the specified user's session. 
-
-
-7. run_logoff_limited.sh
-
-Purpose: Executes the Logoff-Sessions.py script with specific constraints, such as time windows or user groups.
-
-Prerequisites:
-
-Execution permissions for shell scripts
-
-Proper configuration of constraints within the script
-
-
-Usage:
-
-bash run_logoff_limited.sh
-
-Functionality: Wraps the Python script execution with additional logic to enforce specified limitations, ensuring controlled session management. 
-
-
+### 7. `run_logoff_limited.sh`
+- **Purpose**: Adds logic (e.g., time filters, user groups) to session logoffs.
+- **Usage**:
+  ```bash
+  bash run_logoff_limited.sh
+  ```
 
 ---
 
-🟥 Cortex Script
+## 🟥 Cortex Script
 
-8. isolate.py
-
-Purpose: Isolates a compromised machine from the network using Cortex XDR.
-
-Prerequisites:
-
-Python 3.7+
-
-Cortex XDR API access
-
-requests library for HTTP requests
-
-
-Usage:
-
-python isolate.py --endpoint-id 1234567890
-
-Functionality: Sends an API request to Cortex XDR to isolate the specified endpoint, effectively cutting off its network access to prevent the spread of threats. 
-
-
+### 8. `isolate.py`
+- **Purpose**: Isolates a machine via Cortex XDR API.
+- **Usage**:
+  ```bash
+  python isolate.py --endpoint-id 1234567890
+  ```
 
 ---
 
-📦 Requirements
+## 🟪 Wazuh-XDR Scripts
 
-General:
+### 9. `port-block.sh`
+- **Purpose**: Triggered by Wazuh Active Response to isolate a malicious endpoint.
+- **Function**:
+  - Reads Wazuh alert JSON
+  - Extracts IP
+  - Logs IP to `/var/ossec/logs/<ip>.txt`
+  - Invokes `port_block.py`
 
-Python 3.7+
+### 10. `port_block.py`
+- **Purpose**: Uses `arping` to find MAC and shuts down the related switch port.
+- **Function**:
+  - Gets MAC of IP via ARP
+  - Looks for MAC on configured switches
+  - Disables the appropriate interface
+  - Logs MAC, switch, interface, and action results
 
-Shell environment for .sh scripts
+### 11. `port-allow.sh`
+- **Purpose**: Restores a port previously blocked by Wazuh.
+- **Function**:
+  - Reads from `/var/ossec/logs/<ip>.txt`
+  - Calls `port_allow.py` with stored data
 
-
-Python Libraries:
-
-paramiko for SSH connections (Cisco scripts)
-
-requests for HTTP requests (Cortex script)
-
-
-Access:
-
-Network access to Cisco switches
-
-Appropriate permissions in Citrix and Cortex XDR environments 
-
-
-
-
----
-
-🛡️ Disclaimer
-
-These scripts are intended for use by experienced IT professionals. Ensure thorough testing in a controlled environment before deploying in production. 
-
+### 12. `port_allow.py`
+- **Purpose**: Enables a port by reading previously stored info.
+- **Function**:
+  - Reads the stored MAC/switch/interface
+  - Connects via SSH to bring the port back up
 
 ---
 
-🤝 Contributions
+## 🛠️ Prerequisites for Wazuh-XDR
 
-Contributions are welcome! Please fork the repository and submit a pull request with your enhancements or additional scripts. 
-
+- Python 3.7+
+- `netmiko` library
+- `arping` utility (Linux)
+- SSH access to switches
+- Wazuh Manager with Active Response enabled
 
 ---
+
+## 🚀 Wazuh Integration Flow
+
+1. Wazuh detects malicious behavior on an endpoint.
+2. Wazuh triggers `port-block.sh` via Active Response.
+3. IP is logged and passed to `port_block.py`.
+4. The port is located and shut down.
+5. When resolved, `port-allow.sh` can be triggered manually or automatically.
+6. `port_allow.py` brings the port back online using stored data.
+
+---
+
+## 📦 Requirements
+
+**General:**
+- Python 3.7+
+- Bash-compatible shell
+
+**Python Libraries:**
+- `paramiko` (for Cisco)
+- `requests` (for Cortex)
+- `netmiko` (for Wazuh-XDR)
+
+**Access:**
+- Cisco switch SSH access
+- Citrix API or SDK access
+- Cortex XDR API credentials
+
+---
+
+## 🛡️ Disclaimer
+
+These scripts are intended for use by experienced IT professionals. Test thoroughly in staging before use in production environments.
+
+---
+
+## 🤝 Contributions
+
+Contributions are welcome! Fork the repo and submit a pull request with improvements or new features.
