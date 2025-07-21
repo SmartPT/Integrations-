@@ -15,7 +15,7 @@ VERIFY_TLS  = False
 TIMEOUT     = 10
 JSON_PATH   = "/var/ossec/logs/ransomware2.json"
  
-SWITCH_IPS       = ["
+SWITCH_IPS       = ["192.168.2.5","192.168.2.6"]
 USERNAME         = ""
 PASSWORD         = ""
 ENABLE_PASSWORD  = ""
